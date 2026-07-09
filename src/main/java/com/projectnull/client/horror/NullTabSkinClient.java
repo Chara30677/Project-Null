@@ -50,8 +50,13 @@ public final class NullTabSkinClient {
         applyBlackSkin(info);
     }
 
+    private static int skinApplyCooldown;
+
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
+        if (++skinApplyCooldown % 5 != 0) {
+            return;
+        }
         applyNullSkin();
     }
 

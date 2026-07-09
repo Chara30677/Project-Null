@@ -2,6 +2,7 @@ package com.projectnull.horror;
 
 import com.projectnull.config.NullConfig;
 import com.projectnull.network.RequestPublicIpPayload;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.slf4j.Logger;
@@ -13,9 +14,17 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public final class DossierResolver {
     private static final Logger LOGGER = LoggerFactory.getLogger(DossierResolver.class);
+    private static final ExecutorService RESOLVER_EXECUTOR = Executors.newFixedThreadPool(2, runnable -> {
+        Thread thread = new Thread(runnable, "projectnull-dossier");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private static final Map<UUID, PlayerDossier> CACHE = new ConcurrentHashMap<>();
     private static final Map<UUID, CompletableFuture<String>> PENDING_CLIENT_IP = new ConcurrentHashMap<>();
@@ -24,10 +33,6 @@ public final class DossierResolver {
     private DossierResolver() {
     }
 
-    /**
-     * Resolves dossier for a specific targeted player.
-     * Each online player has their own cached public IP and location.
-     */
     public static PlayerDossier resolve(ServerPlayer player) {
         if (!NullConfig.useRealLocationData()) {
             return PlayerDossier.fallback(player);
@@ -37,15 +42,6 @@ public final class DossierResolver {
         PlayerDossier cached = CACHE.get(id);
         if (cached != null) {
             return cached;
-        }
-
-        String connectionIp = extractConnectionIp(player);
-        if (!IpAddressUtil.requiresClientLookup(connectionIp)) {
-            PlayerDossier dossier = GeoIpService.lookup(connectionIp);
-            CACHE.put(id, dossier);
-            LOGGER.info("[Project Null] Resolved dossier for {} -> {} ({})",
-                    player.getGameProfile().getName(), dossier.publicIp(), dossier.locationLine());
-            return dossier;
         }
 
         prefetch(player);
@@ -63,7 +59,7 @@ public final class DossierResolver {
             return;
         }
 
-        CompletableFuture.runAsync(() -> {
+        RESOLVER_EXECUTOR.execute(() -> {
             try {
                 resolveAsync(player);
             } finally {
@@ -83,7 +79,7 @@ public final class DossierResolver {
             pending.complete(trimmed);
         }
 
-        storeDossier(player.getUUID(), player.getGameProfile().getName(), trimmed);
+        storeDossierAsync(player.getUUID(), player.getGameProfile().getName(), trimmed);
     }
 
     public static void clear(ServerPlayer player) {
@@ -98,33 +94,50 @@ public final class DossierResolver {
 
     private static void resolveAsync(ServerPlayer player) {
         UUID id = player.getUUID();
+        MinecraftServer server = player.getServer();
+        if (server == null || !player.isAlive()) {
+            CACHE.putIfAbsent(id, PlayerDossier.fallback(player));
+            return;
+        }
+
         try {
-            String ip = resolveIp(player);
-            storeDossier(id, player.getGameProfile().getName(), ip);
+            String connectionIp = extractConnectionIp(player);
+            if (!IpAddressUtil.requiresClientLookup(connectionIp)) {
+                storeDossierAsync(id, player.getGameProfile().getName(), connectionIp);
+                return;
+            }
+
+            CompletableFuture<String> future = new CompletableFuture<>();
+            PENDING_CLIENT_IP.put(id, future);
+            server.execute(() -> {
+                if (player.isAlive()) {
+                    PacketDistributor.sendToPlayer(player, new RequestPublicIpPayload());
+                } else {
+                    future.completeExceptionally(new IllegalStateException("Player disconnected"));
+                }
+            });
+
+            String ip = future.orTimeout(8, TimeUnit.SECONDS).get();
+            storeDossierAsync(id, player.getGameProfile().getName(), ip);
         } catch (Exception e) {
             LOGGER.warn("[Project Null] Failed to resolve dossier for {}", player.getGameProfile().getName(), e);
             CACHE.putIfAbsent(id, PlayerDossier.fallback(player));
+        } finally {
+            PENDING_CLIENT_IP.remove(id);
         }
     }
 
-    private static String resolveIp(ServerPlayer player) throws Exception {
-        String connectionIp = extractConnectionIp(player);
-        if (!IpAddressUtil.requiresClientLookup(connectionIp)) {
-            return connectionIp;
-        }
-
-        CompletableFuture<String> future = new CompletableFuture<>();
-        PENDING_CLIENT_IP.put(player.getUUID(), future);
-        PacketDistributor.sendToPlayer(player, new RequestPublicIpPayload());
-
-        return future.orTimeout(8, java.util.concurrent.TimeUnit.SECONDS).get();
-    }
-
-    private static void storeDossier(UUID playerId, String playerName, String ip) {
-        PlayerDossier dossier = GeoIpService.lookup(ip);
-        CACHE.put(playerId, dossier);
-        LOGGER.info("[Project Null] Resolved dossier for {} -> {} ({})",
-                playerName, dossier.publicIp(), dossier.locationLine());
+    private static void storeDossierAsync(UUID playerId, String playerName, String ip) {
+        RESOLVER_EXECUTOR.execute(() -> {
+            try {
+                PlayerDossier dossier = GeoIpService.lookup(ip);
+                CACHE.put(playerId, dossier);
+                LOGGER.info("[Project Null] Resolved dossier for {} -> {} ({})",
+                        playerName, dossier.publicIp(), dossier.locationLine());
+            } catch (Exception e) {
+                LOGGER.warn("[Project Null] Failed to store dossier for {}", playerName, e);
+            }
+        });
     }
 
     private static String extractConnectionIp(ServerPlayer player) {

@@ -67,6 +67,14 @@ public final class NullHorrorHandler {
             return;
         }
 
+        try {
+            handleClientEffect(payload);
+        } catch (Exception e) {
+            LOGGER.error("[Project Null] Failed to handle horror effect {}", payload.effectType(), e);
+        }
+    }
+
+    private static void handleClientEffect(HorrorEffectPayload payload) {
         captureFileExplorerState();
 
         switch (payload.effectType()) {

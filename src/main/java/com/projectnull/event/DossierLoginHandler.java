@@ -14,7 +14,12 @@ public final class DossierLoginHandler {
     @SubscribeEvent
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
-            DossierResolver.prefetch(player);
+            try {
+                DossierResolver.prefetch(player);
+            } catch (Exception e) {
+                org.slf4j.LoggerFactory.getLogger(DossierLoginHandler.class)
+                        .warn("[Project Null] Failed to prefetch dossier for {}", player.getGameProfile().getName(), e);
+            }
         }
     }
 

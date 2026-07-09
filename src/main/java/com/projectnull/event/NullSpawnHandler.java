@@ -14,6 +14,8 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -21,6 +23,7 @@ import java.util.UUID;
 
 @EventBusSubscriber(modid = com.projectnull.ProjectNull.MODID)
 public final class NullSpawnHandler {
+    private static final Logger LOGGER = LoggerFactory.getLogger(NullSpawnHandler.class);
     private static final int TICK_INTERVAL = 100;
     private static final int MIN_DARK_LIGHT = 7;
     private static final int COOLDOWN_TICKS = 6000;
@@ -37,22 +40,29 @@ public final class NullSpawnHandler {
             return;
         }
 
+        try {
+            handleSpawnTick(event.getServer().overworld());
+        } catch (Exception e) {
+            LOGGER.error("[Project Null] Spawn handler failed", e);
+        }
+    }
+
+    private static void handleSpawnTick(ServerLevel level) {
         tickCounter++;
         if (tickCounter < TICK_INTERVAL) {
             return;
         }
         tickCounter = 0;
 
-        ServerLevel level = event.getServer().overworld();
         if (!NullWorldData.get(level).hasNullJoined()) {
             return;
         }
 
-        if (level.getGameRules().getBoolean(net.minecraft.world.level.GameRules.RULE_DOMOBSPAWNING) == false) {
+        if (!level.getGameRules().getBoolean(net.minecraft.world.level.GameRules.RULE_DOMOBSPAWNING)) {
             return;
         }
 
-        for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
+        for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
             if (player.isCreative() || player.isSpectator()) {
                 continue;
             }
@@ -126,7 +136,8 @@ public final class NullSpawnHandler {
             int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
 
             BlockPos pos = new BlockPos(x, y, z);
-            if (level.getBlockState(pos.below()).isSolidRender(level, pos.below())
+            BlockPos below = pos.below();
+            if (!level.getBlockState(below).isAir()
                     && level.getBlockState(pos).isAir()
                     && level.getBlockState(pos.above()).isAir()) {
                 return pos;

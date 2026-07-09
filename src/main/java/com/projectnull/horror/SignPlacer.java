@@ -13,8 +13,13 @@ import net.minecraft.world.level.block.entity.SignBlockEntity;
 import net.minecraft.world.level.block.entity.SignText;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class SignPlacer {
+    private static final Logger LOGGER = LoggerFactory.getLogger(SignPlacer.class);
+    private static final int MAX_LINE_LENGTH = 43;
+
     private SignPlacer() {
     }
 
@@ -23,35 +28,39 @@ public final class SignPlacer {
             return;
         }
 
-        BlockPos signPos = findSignPosition(level, serverPlayer, random);
-        if (signPos == null) {
-            return;
+        try {
+            BlockPos signPos = findSignPosition(level, serverPlayer, random);
+            if (signPos == null) {
+                return;
+            }
+
+            Direction facing = Direction.Plane.HORIZONTAL.getRandomDirection(random);
+            int rotation = directionToRotation(facing);
+            BlockState signState = Blocks.OAK_SIGN.defaultBlockState()
+                    .setValue(StandingSignBlock.ROTATION, rotation);
+
+            if (!level.setBlock(signPos, signState, 3)) {
+                return;
+            }
+
+            if (!(level.getBlockEntity(signPos) instanceof SignBlockEntity sign)) {
+                return;
+            }
+
+            PlayerDossier dossier = DossierResolver.resolve(serverPlayer);
+            String[] lines = CreepyMessages.createSignLines(serverPlayer.getGameProfile().getName(), dossier, random);
+            SignText text = new SignText(
+                    toComponents(lines),
+                    toComponents(lines),
+                    net.minecraft.world.item.DyeColor.BLACK,
+                    true
+            );
+            sign.setText(text, true);
+            sign.setChanged();
+            level.sendBlockUpdated(signPos, signState, signState, 3);
+        } catch (Exception e) {
+            LOGGER.warn("[Project Null] Failed to place creepy sign for {}", player.getName().getString(), e);
         }
-
-        Direction facing = Direction.Plane.HORIZONTAL.getRandomDirection(random);
-        int rotation = directionToRotation(facing);
-        BlockState signState = Blocks.OAK_SIGN.defaultBlockState()
-                .setValue(StandingSignBlock.ROTATION, rotation);
-
-        if (!level.setBlock(signPos, signState, 3)) {
-            return;
-        }
-
-        if (!(level.getBlockEntity(signPos) instanceof SignBlockEntity sign)) {
-            return;
-        }
-
-        PlayerDossier dossier = DossierResolver.resolve(serverPlayer);
-        String[] lines = CreepyMessages.createSignLines(serverPlayer.getGameProfile().getName(), dossier, random);
-        SignText text = new SignText(
-                toComponents(lines),
-                toComponents(lines),
-                net.minecraft.world.item.DyeColor.BLACK,
-                true
-        );
-        sign.setText(text, true);
-        sign.setChanged();
-        level.sendBlockUpdated(signPos, signState, signState, 3);
     }
 
     private static int directionToRotation(Direction direction) {
@@ -67,7 +76,11 @@ public final class SignPlacer {
     private static Component[] toComponents(String[] lines) {
         Component[] components = new Component[4];
         for (int i = 0; i < 4; i++) {
-            components[i] = Component.literal(lines[i]);
+            String line = i < lines.length ? lines[i] : "";
+            if (line.length() > MAX_LINE_LENGTH) {
+                line = line.substring(0, MAX_LINE_LENGTH);
+            }
+            components[i] = Component.literal(line);
         }
         return components;
     }

@@ -14,7 +14,6 @@ import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.server.players.PlayerList;
 import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Scoreboard;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -23,12 +22,15 @@ import net.neoforged.neoforge.common.util.FakePlayerFactory;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.EnumSet;
 import java.util.List;
 
-@EventBusSubscriber(modid = com.projectnull.ProjectNull.MODID)
+@EventBusSubscriber(modid = ProjectNull.MODID)
 public final class NullJoinHandler {
+    private static final Logger LOGGER = LoggerFactory.getLogger(NullJoinHandler.class);
     private static final String NULL_TEAM = ProjectNull.MODID + "_null";
     private static final GameProfile NULL_PROFILE = new GameProfile(NullPresence.NULL_UUID, NullPresence.NULL_NAME);
     private static int tickCounter;
@@ -38,13 +40,37 @@ public final class NullJoinHandler {
 
     @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
+        try {
+            handleJoinTick(event.getServer());
+        } catch (Exception e) {
+            LOGGER.error("[Project Null] Join handler failed", e);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+
+        try {
+            ServerLevel overworld = player.server.overworld();
+            if (!NullWorldData.get(overworld).hasNullJoined()) {
+                return;
+            }
+            syncNullTabListTo(player);
+        } catch (Exception e) {
+            LOGGER.error("[Project Null] Failed to sync Null tab list for {}", player.getGameProfile().getName(), e);
+        }
+    }
+
+    private static void handleJoinTick(MinecraftServer server) {
         tickCounter++;
         if (tickCounter < 20) {
             return;
         }
         tickCounter = 0;
 
-        MinecraftServer server = event.getServer();
         ServerLevel overworld = server.overworld();
         NullWorldData data = NullWorldData.get(overworld);
 
@@ -64,20 +90,6 @@ public final class NullJoinHandler {
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             NullHorrorEffects.triggerEffect(player, HorrorEffectPayload.HorrorEffectType.GLITCH);
         }
-    }
-
-    @SubscribeEvent
-    public static void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)) {
-            return;
-        }
-
-        ServerLevel overworld = player.server.overworld();
-        if (!NullWorldData.get(overworld).hasNullJoined()) {
-            return;
-        }
-
-        syncNullTabListTo(player);
     }
 
     private static void addNullToTabList(MinecraftServer server) {

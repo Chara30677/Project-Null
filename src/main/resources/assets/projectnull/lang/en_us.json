@@ -1,3 +1,11 @@
 {
-  "entity.projectnull.null": "Null"
+  "entity.projectnull.null": "Null",
+  "projectnull.config.title": "NULL Settings",
+  "projectnull.config.client_horror": "Client horror effects",
+  "projectnull.config.server_horror": "Server horror effects",
+  "projectnull.config.null_spawning": "Null spawning",
+  "projectnull.config.creepy_signs": "Creepy signs",
+  "projectnull.config.real_location": "Real location data",
+  "projectnull.config.spawn_chance": "Spawn chance",
+  "projectnull.config.join_days": "Days until Null joins"
 }
