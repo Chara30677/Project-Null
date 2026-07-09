@@ -254,7 +254,12 @@ public class FakeFileExplorerScreen extends SharpHorrorScreen {
     }
 
     private String readFileContent(String filename) {
-        Path file = Minecraft.getInstance().gameDirectory.toPath()
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return ExplorerDocuments.buildFileContent(filename, "Player", dossier);
+        }
+
+        Path file = mc.gameDirectory.toPath()
                 .resolve("projectnull").resolve("desktop_sim").resolve(filename);
         if (Files.isRegularFile(file)) {
             try {
@@ -265,7 +270,7 @@ public class FakeFileExplorerScreen extends SharpHorrorScreen {
 
         return ExplorerDocuments.buildFileContent(
                 filename,
-                Minecraft.getInstance().player.getGameProfile().getName(),
+                mc.player.getGameProfile().getName(),
                 dossier
         );
     }

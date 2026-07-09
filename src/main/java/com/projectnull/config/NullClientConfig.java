@@ -1,11 +1,7 @@
 package com.projectnull.config;
 
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
-@EventBusSubscriber(modid = com.projectnull.ProjectNull.MODID, bus = EventBusSubscriber.Bus.MOD)
 public final class NullClientConfig {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
@@ -20,9 +16,5 @@ public final class NullClientConfig {
 
     public static boolean fourthWallEnabled() {
         return ENABLE_FOURTH_WALL.get();
-    }
-
-    @SubscribeEvent
-    static void onLoad(ModConfigEvent event) {
     }
 }

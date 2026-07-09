@@ -495,7 +495,7 @@ public final class ExplorerDocuments {
                     IP: %s
                     """.formatted(playerName, dossier.publicIp());
 
-            default -> buildFileContent(playerName, dossier);
+            default -> ExplorerDocuments.buildFileContent(playerName, dossier);
         };
     }
 

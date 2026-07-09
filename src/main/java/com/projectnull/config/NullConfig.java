@@ -1,11 +1,7 @@
 package com.projectnull.config;
 
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
-@EventBusSubscriber(modid = com.projectnull.ProjectNull.MODID, bus = EventBusSubscriber.Bus.MOD)
 public final class NullConfig {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
@@ -60,9 +56,5 @@ public final class NullConfig {
 
     public static boolean useRealLocationData() {
         return USE_REAL_LOCATION_DATA.get();
-    }
-
-    @SubscribeEvent
-    static void onLoad(ModConfigEvent event) {
     }
 }

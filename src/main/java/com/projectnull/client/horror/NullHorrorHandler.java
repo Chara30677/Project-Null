@@ -21,7 +21,7 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.Queue;
 
-import javax.annotation.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 public final class NullHorrorHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(NullHorrorHandler.class);
