@@ -7,15 +7,13 @@ import net.minecraft.network.chat.Component;
 public class FakeNotepadScreen extends SharpHorrorScreen {
     private final String filename;
     private final String content;
-    private final Screen parent;
     private int ticksOpen;
     private int visibleChars;
 
     public FakeNotepadScreen(String filename, String content, Screen parent) {
-        super(Component.literal(filename));
+        super(Component.literal(filename), parent);
         this.filename = filename;
         this.content = content;
-        this.parent = parent;
     }
 
     @Override
@@ -62,7 +60,7 @@ public class FakeNotepadScreen extends SharpHorrorScreen {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (ticksOpen > 18) {
             HorrorSounds.playPopup();
-            this.minecraft.setScreen(parent);
+            this.onClose();
             return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);

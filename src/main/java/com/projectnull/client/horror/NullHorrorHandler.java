@@ -8,6 +8,7 @@ import com.projectnull.network.HorrorEffectPayload;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
@@ -20,6 +21,8 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.Queue;
 
+import javax.annotation.Nullable;
+
 public final class NullHorrorHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(NullHorrorHandler.class);
 
@@ -31,6 +34,9 @@ public final class NullHorrorHandler {
     private static PlayerDossier activeWallpaperDossier;
     private static PlayerDossier activeNotificationDossier;
     private static final Queue<DelayedEffect> effectQueue = new ArrayDeque<>();
+    @Nullable
+    private static PlayerDossier fileExplorerRestoreDossier;
+    private static int fileExplorerRestoreDelay;
 
     private NullHorrorHandler() {
     }
@@ -61,13 +67,15 @@ public final class NullHorrorHandler {
             return;
         }
 
+        captureFileExplorerState();
+
         switch (payload.effectType()) {
             case GLITCH -> triggerGlitch(100);
             case DESKTOP -> queueEffect(10, () -> {
                 String filename = NullHorrorEffects.unpackFilename(payload.data());
                 PlayerDossier dossier = PlayerDossier.deserialize(NullHorrorEffects.unpackDossier(payload.data()));
                 HorrorSounds.playPopup();
-                Minecraft.getInstance().setScreen(new FakeDesktopScreen(filename, dossier));
+                showHorrorScreen(new FakeDesktopScreen(filename, dossier));
             });
             case CREATE_FILE -> {
                 String filename = NullHorrorEffects.unpackFilename(payload.data());
@@ -76,7 +84,7 @@ public final class NullHorrorHandler {
                 queueEffect(5, () -> HorrorSounds.playStinger());
                 queueEffect(20, () -> {
                     HorrorSounds.playPopup();
-                    Minecraft.getInstance().setScreen(new FakeDesktopScreen(filename, dossier));
+                    showHorrorScreen(new FakeDesktopScreen(filename, dossier));
                 });
             }
             case WALLPAPER -> {
@@ -87,8 +95,13 @@ public final class NullHorrorHandler {
             }
             case FILE_EXPLORER -> queueEffect(8, () -> {
                 PlayerDossier dossier = PlayerDossier.deserialize(payload.data());
+                FakeFileExplorerScreen existing = findOpenFileExplorer();
                 HorrorSounds.playPopup();
-                Minecraft.getInstance().setScreen(new FakeFileExplorerScreen(dossier));
+                if (existing != null) {
+                    existing.refreshEntries();
+                } else {
+                    showHorrorScreen(new FakeFileExplorerScreen(dossier));
+                }
             });
             case CHAT -> queueEffect(0, () -> {
                 Minecraft mc = Minecraft.getInstance();
@@ -106,17 +119,17 @@ public final class NullHorrorHandler {
             case TASK_MANAGER -> queueEffect(8, () -> {
                 PlayerDossier dossier = PlayerDossier.deserialize(payload.data());
                 HorrorSounds.playPopup();
-                Minecraft.getInstance().setScreen(new FakeTaskManagerScreen(dossier));
+                showHorrorScreen(new FakeTaskManagerScreen(dossier));
             });
             case CMD_PROMPT -> queueEffect(6, () -> {
                 PlayerDossier dossier = PlayerDossier.deserialize(payload.data());
                 HorrorSounds.playPopup();
-                Minecraft.getInstance().setScreen(FakeCmdScreen.forLocalPlayer(dossier));
+                showHorrorScreen(FakeCmdScreen.forLocalPlayer(dossier));
             });
             case BSOD -> queueEffect(4, () -> {
                 PlayerDossier dossier = PlayerDossier.deserialize(payload.data());
                 HorrorSounds.playBsod();
-                Minecraft.getInstance().setScreen(new FakeBsodScreen(dossier));
+                showHorrorScreen(new FakeBsodScreen(dossier));
             });
             case NOTIFICATION -> queueEffect(0, () -> {
                 activeNotificationDossier = PlayerDossier.deserialize(payload.data());
@@ -126,14 +139,76 @@ public final class NullHorrorHandler {
             case RUN_DIALOG -> queueEffect(10, () -> {
                 PlayerDossier dossier = PlayerDossier.deserialize(payload.data());
                 HorrorSounds.playPopup();
-                Minecraft.getInstance().setScreen(new FakeRunDialogScreen(dossier));
+                showHorrorScreen(new FakeRunDialogScreen(dossier));
             });
             case ERROR_DIALOG -> queueEffect(12, () -> {
                 String filename = NullHorrorEffects.unpackFilename(payload.data());
                 PlayerDossier dossier = PlayerDossier.deserialize(NullHorrorEffects.unpackDossier(payload.data()));
                 HorrorSounds.playError();
-                Minecraft.getInstance().setScreen(new FakeErrorDialogScreen(filename, dossier));
+                showHorrorScreen(new FakeErrorDialogScreen(filename, dossier));
             });
+        }
+    }
+
+    @Nullable
+    public static FakeFileExplorerScreen findOpenFileExplorer() {
+        Minecraft minecraft = Minecraft.getInstance();
+        Screen screen = minecraft.screen;
+        int depth = 0;
+        while (screen != null && depth++ < 16) {
+            if (screen instanceof FakeFileExplorerScreen explorer) {
+                return explorer;
+            }
+            if (screen instanceof SharpHorrorScreen horror) {
+                screen = horror.getReturnScreen();
+            } else {
+                break;
+            }
+        }
+        return null;
+    }
+
+    private static void captureFileExplorerState() {
+        FakeFileExplorerScreen explorer = findOpenFileExplorer();
+        if (explorer != null) {
+            fileExplorerRestoreDossier = explorer.getDossier();
+            fileExplorerRestoreDelay = 0;
+        }
+    }
+
+    private static void showHorrorScreen(SharpHorrorScreen screen) {
+        FakeFileExplorerScreen explorer = findOpenFileExplorer();
+        if (explorer != null) {
+            screen.setReturnScreen(explorer);
+            fileExplorerRestoreDossier = explorer.getDossier();
+            fileExplorerRestoreDelay = 0;
+        }
+        Minecraft.getInstance().setScreen(screen);
+    }
+
+    private static void attemptFileExplorerRestore() {
+        if (fileExplorerRestoreDossier == null || !effectQueue.isEmpty()) {
+            return;
+        }
+
+        Minecraft minecraft = Minecraft.getInstance();
+        Screen screen = minecraft.screen;
+        if (screen instanceof FakeFileExplorerScreen) {
+            fileExplorerRestoreDossier = null;
+            fileExplorerRestoreDelay = 0;
+            return;
+        }
+
+        if (screen instanceof SharpHorrorScreen) {
+            fileExplorerRestoreDelay = 0;
+            return;
+        }
+
+        fileExplorerRestoreDelay++;
+        if (fileExplorerRestoreDelay >= 12) {
+            minecraft.setScreen(new FakeFileExplorerScreen(fileExplorerRestoreDossier));
+            fileExplorerRestoreDossier = null;
+            fileExplorerRestoreDelay = 0;
         }
     }
 
@@ -148,6 +223,8 @@ public final class NullHorrorHandler {
                 }
             }
         }
+
+        attemptFileExplorerRestore();
     }
 
     private static void queueEffect(int delay, Runnable action) {

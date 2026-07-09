@@ -1,6 +1,6 @@
 package com.projectnull.client.horror;
 
-import com.projectnull.horror.CreepyMessages;
+import com.projectnull.horror.ExplorerDocuments;
 import com.projectnull.horror.PlayerDossier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -12,23 +12,15 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public class FakeFileExplorerScreen extends SharpHorrorScreen {
     private static final int ROW_HEIGHT = 18;
-    private static final List<String> BUILTIN_FILES = List.of(
-            "null_is_watching.txt",
-            "DO_NOT_OPEN.txt",
-            "NULL_README.txt",
-            "your_location.txt",
-            "connection_log.txt",
-            "behind_you.png",
-            "desktop.ini",
-            "NULL"
-    );
 
     private final PlayerDossier dossier;
     private final List<ExplorerEntry> entries = new ArrayList<>();
+    private ExplorerLocation location = ExplorerLocation.ROOT;
     private int scrollOffset;
     private int ticksOpen;
     private int selectedIndex = -1;
@@ -39,10 +31,24 @@ public class FakeFileExplorerScreen extends SharpHorrorScreen {
         loadEntries();
     }
 
+    public PlayerDossier getDossier() {
+        return dossier;
+    }
+
+    public void refreshEntries() {
+        loadEntries();
+    }
+
     private void loadEntries() {
         entries.clear();
         entries.add(ExplorerEntry.folder(".."));
-        entries.add(ExplorerEntry.folder("NULL"));
+
+        if (location == ExplorerLocation.ROOT) {
+            entries.add(ExplorerEntry.folder("inner"));
+            addBuiltinFiles(ExplorerDocuments.BUILTIN_FILES);
+        } else {
+            addBuiltinFiles(ExplorerDocuments.INNER_FOLDER_FILES);
+        }
 
         Path desktopSim = Minecraft.getInstance().gameDirectory.toPath()
                 .resolve("projectnull").resolve("desktop_sim");
@@ -57,21 +63,31 @@ public class FakeFileExplorerScreen extends SharpHorrorScreen {
             }
         }
 
-        for (String builtin : BUILTIN_FILES) {
+        entries.sort(Comparator.comparing((ExplorerEntry e) -> !e.folder).thenComparing(e -> e.name.toLowerCase()));
+        scrollOffset = 0;
+        selectedIndex = -1;
+    }
+
+    private void addBuiltinFiles(Set<String> files) {
+        for (String builtin : files) {
             if (entries.stream().noneMatch(e -> e.name.equals(builtin))) {
                 entries.add(ExplorerEntry.file(builtin));
             }
         }
+    }
 
-        entries.sort(Comparator.comparing((ExplorerEntry e) -> !e.folder).thenComparing(e -> e.name.toLowerCase()));
+    private String breadcrumb() {
+        return location == ExplorerLocation.ROOT
+                ? "This PC > Desktop > NULL"
+                : "This PC > Desktop > NULL > inner";
     }
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         graphics.fill(0, 0, this.width, this.height, 0xFF101018);
 
-        int winWidth = Math.min(560, this.width - 30);
-        int winHeight = Math.min(380, this.height - 30);
+        int winWidth = Math.min(620, this.width - 30);
+        int winHeight = Math.min(440, this.height - 30);
         int x = (this.width - winWidth) / 2;
         int y = (this.height - winHeight) / 2;
 
@@ -82,7 +98,7 @@ public class FakeFileExplorerScreen extends SharpHorrorScreen {
 
         int toolbarY = y + 34;
         graphics.fill(x + 8, toolbarY, x + winWidth - 8, toolbarY + 24, 0xFFECECEC);
-        graphics.drawString(this.font, "This PC > Desktop > NULL", x + 14, toolbarY + 8, 0xFF222222);
+        graphics.drawString(this.font, breadcrumb(), x + 14, toolbarY + 8, 0xFF222222);
 
         int listY = toolbarY + 30;
         int listHeight = winHeight - 96;
@@ -109,8 +125,8 @@ public class FakeFileExplorerScreen extends SharpHorrorScreen {
                 graphics.fill(x + 8, rowY, x + winWidth - 8, rowY + ROW_HEIGHT, 0xFFDCEEFF);
             }
 
-            int color = entry.folder ? 0xFFE6A800 : HorrorStyle.ON_LIGHT_PRIMARY;
-            String prefix = entry.folder ? "[DIR] " : "[FILE] ";
+            int color = entry.folder ? 0xFFE6A800 : fileColor(entry.name);
+            String prefix = entry.folder ? "[DIR] " : filePrefix(entry.name);
             graphics.drawString(this.font, prefix + entry.name, x + 14, rowY + 5, color);
             graphics.drawString(this.font, entry.date, x + winWidth - 130, rowY + 5, 0xFF666666);
         }
@@ -121,8 +137,48 @@ public class FakeFileExplorerScreen extends SharpHorrorScreen {
                 x + 12, statusY + 7, HorrorStyle.ON_LIGHT_SECONDARY);
 
         if (ticksOpen > 40) {
-            graphics.drawString(this.font, "Double-click a file to open  |  ESC to close", x + 12, y + winHeight - 48, HorrorStyle.ON_LIGHT_MUTED);
+            graphics.drawString(this.font, "Open folders and files  |  ESC to close", x + 12, y + winHeight - 48, HorrorStyle.ON_LIGHT_MUTED);
         }
+    }
+
+    private static int fileColor(String name) {
+        String lower = name.toLowerCase();
+        if (lower.endsWith(".exe") || lower.endsWith(".sys") || lower.endsWith(".bat")) {
+            return 0xFFAA0000;
+        }
+        if (lower.endsWith(".log") || lower.endsWith(".json") || lower.endsWith(".ini")) {
+            return 0xFF444488;
+        }
+        if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".mp4")) {
+            return 0xFF226622;
+        }
+        return HorrorStyle.ON_LIGHT_PRIMARY;
+    }
+
+    private static String filePrefix(String name) {
+        String lower = name.toLowerCase();
+        if (lower.endsWith(".exe") || lower.endsWith(".sys")) {
+            return "[EXE] ";
+        }
+        if (lower.endsWith(".bat")) {
+            return "[BAT] ";
+        }
+        if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+            return "[IMG] ";
+        }
+        if (lower.endsWith(".mp4") || lower.endsWith(".wav")) {
+            return "[MEDIA] ";
+        }
+        if (lower.endsWith(".log")) {
+            return "[LOG] ";
+        }
+        if (lower.endsWith(".json")) {
+            return "[JSON] ";
+        }
+        if (lower.endsWith(".lnk")) {
+            return "[LNK] ";
+        }
+        return "[FILE] ";
     }
 
     @Override
@@ -131,8 +187,8 @@ public class FakeFileExplorerScreen extends SharpHorrorScreen {
             return super.mouseClicked(mouseX, mouseY, button);
         }
 
-        int winWidth = Math.min(560, this.width - 30);
-        int winHeight = Math.min(380, this.height - 30);
+        int winWidth = Math.min(620, this.width - 30);
+        int winHeight = Math.min(440, this.height - 30);
         int x = (this.width - winWidth) / 2;
         int y = (this.height - winHeight) / 2;
         int listY = y + 34 + 30;
@@ -149,7 +205,9 @@ public class FakeFileExplorerScreen extends SharpHorrorScreen {
                     && mouseY >= rowY && mouseY < rowY + ROW_HEIGHT) {
                 ExplorerEntry entry = entries.get(index);
                 selectedIndex = index;
-                if (!entry.folder) {
+                if (entry.folder) {
+                    openFolder(entry.name);
+                } else {
                     openFile(entry.name);
                 }
                 return true;
@@ -159,9 +217,27 @@ public class FakeFileExplorerScreen extends SharpHorrorScreen {
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
+    private void openFolder(String folderName) {
+        if ("..".equals(folderName)) {
+            if (location == ExplorerLocation.INNER) {
+                location = ExplorerLocation.ROOT;
+                HorrorSounds.playFileOpen();
+                loadEntries();
+            }
+            return;
+        }
+
+        if ("inner".equals(folderName) && location == ExplorerLocation.ROOT) {
+            location = ExplorerLocation.INNER;
+            HorrorSounds.playFileOpen();
+            loadEntries();
+        }
+    }
+
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        int maxScroll = Math.max(0, entries.size() - 1);
+        int visibleRows = Math.max(1, (Math.min(440, this.height - 30) - 160) / ROW_HEIGHT);
+        int maxScroll = Math.max(0, entries.size() - visibleRows);
         scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset - (int) scrollY));
         return true;
     }
@@ -187,12 +263,8 @@ public class FakeFileExplorerScreen extends SharpHorrorScreen {
             }
         }
 
-        if (filename.endsWith(".png") || filename.endsWith(".ini")) {
-            return "[BINARY FILE]\n\nNULL embedded data in " + filename + "\nIP: " + dossier.publicIp()
-                    + "\nLocation: " + dossier.locationLine() + ", " + dossier.country();
-        }
-
-        return CreepyMessages.buildFileContent(
+        return ExplorerDocuments.buildFileContent(
+                filename,
                 Minecraft.getInstance().player.getGameProfile().getName(),
                 dossier
         );
@@ -201,14 +273,19 @@ public class FakeFileExplorerScreen extends SharpHorrorScreen {
     @Override
     public void tick() {
         ticksOpen++;
-        if (ticksOpen > 500) {
+        if (ticksOpen > 700) {
             this.onClose();
         }
     }
 
+    private enum ExplorerLocation {
+        ROOT,
+        INNER
+    }
+
     private record ExplorerEntry(String name, boolean folder, String date) {
         static ExplorerEntry file(String name) {
-            return new ExplorerEntry(name, false, "7/8/2026 9:00 PM");
+            return new ExplorerEntry(name, false, ExplorerDocuments.modifiedDate(name));
         }
 
         static ExplorerEntry folder(String name) {

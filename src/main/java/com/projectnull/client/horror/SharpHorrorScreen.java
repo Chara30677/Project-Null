@@ -4,12 +4,40 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
+import javax.annotation.Nullable;
+
 /**
  * Horror screens that render crisply without Minecraft's default menu blur.
  */
 public abstract class SharpHorrorScreen extends Screen {
+    @Nullable
+    private Screen returnScreen;
+
     protected SharpHorrorScreen(Component title) {
+        this(title, null);
+    }
+
+    protected SharpHorrorScreen(Component title, @Nullable Screen returnScreen) {
         super(title);
+        this.returnScreen = returnScreen;
+    }
+
+    @Nullable
+    public Screen getReturnScreen() {
+        return returnScreen;
+    }
+
+    public void setReturnScreen(@Nullable Screen returnScreen) {
+        this.returnScreen = returnScreen;
+    }
+
+    @Override
+    public void onClose() {
+        if (returnScreen != null) {
+            this.minecraft.setScreen(returnScreen);
+        } else {
+            super.onClose();
+        }
     }
 
     @Override

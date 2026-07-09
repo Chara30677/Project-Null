@@ -172,32 +172,17 @@ public final class CreepyMessages {
                 "your_location.txt",
                 "connection_log.txt",
                 "desktop.ini",
-                "NULL"
+                "last_seen.txt",
+                "session_0xNULL.log",
+                "HE_IS_BEHIND_YOU.txt",
+                "deleted_messages.txt",
+                "they_know_your_name.txt",
+                "null.exe"
         );
         return names.get(random.nextInt(names.size()));
     }
 
     public static String buildFileContent(String playerName, PlayerDossier dossier) {
-        return """
-                NULL IS WATCHING
-                ==============
-
-                Player: %s
-                Public IP: %s
-                Location: %s, %s
-                Country: %s
-
-                Do not close Minecraft.
-                Do not turn around.
-                It is already too late.
-
-                - NULL
-                """.formatted(
-                playerName,
-                dossier.publicIp(),
-                dossier.city(),
-                dossier.state(),
-                dossier.country()
-        );
+        return ExplorerDocuments.buildFileContent(playerName, dossier);
     }
 }
