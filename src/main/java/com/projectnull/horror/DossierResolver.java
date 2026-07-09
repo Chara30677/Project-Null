@@ -1,0 +1,137 @@
+package com.projectnull.horror;
+
+import com.projectnull.config.NullConfig;
+import com.projectnull.network.RequestPublicIpPayload;
+import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.neoforge.network.PacketDistributor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+
+public final class DossierResolver {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DossierResolver.class);
+
+    private static final Map<UUID, PlayerDossier> CACHE = new ConcurrentHashMap<>();
+    private static final Map<UUID, CompletableFuture<String>> PENDING_CLIENT_IP = new ConcurrentHashMap<>();
+    private static final Map<UUID, Boolean> IN_FLIGHT = new ConcurrentHashMap<>();
+
+    private DossierResolver() {
+    }
+
+    /**
+     * Resolves dossier for a specific targeted player.
+     * Each online player has their own cached public IP and location.
+     */
+    public static PlayerDossier resolve(ServerPlayer player) {
+        if (!NullConfig.useRealLocationData()) {
+            return PlayerDossier.fallback(player);
+        }
+
+        UUID id = player.getUUID();
+        PlayerDossier cached = CACHE.get(id);
+        if (cached != null) {
+            return cached;
+        }
+
+        String connectionIp = extractConnectionIp(player);
+        if (!IpAddressUtil.requiresClientLookup(connectionIp)) {
+            PlayerDossier dossier = GeoIpService.lookup(connectionIp);
+            CACHE.put(id, dossier);
+            LOGGER.info("[Project Null] Resolved dossier for {} -> {} ({})",
+                    player.getGameProfile().getName(), dossier.publicIp(), dossier.locationLine());
+            return dossier;
+        }
+
+        prefetch(player);
+        return PlayerDossier.fallback(player);
+    }
+
+    public static void prefetch(ServerPlayer player) {
+        if (!NullConfig.useRealLocationData()) {
+            CACHE.put(player.getUUID(), PlayerDossier.fallback(player));
+            return;
+        }
+
+        UUID id = player.getUUID();
+        if (CACHE.containsKey(id) || IN_FLIGHT.putIfAbsent(id, Boolean.TRUE) != null) {
+            return;
+        }
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                resolveAsync(player);
+            } finally {
+                IN_FLIGHT.remove(id);
+            }
+        });
+    }
+
+    public static void completeClientIp(ServerPlayer player, String publicIp) {
+        if (publicIp == null || publicIp.isBlank()) {
+            return;
+        }
+
+        String trimmed = publicIp.trim();
+        CompletableFuture<String> pending = PENDING_CLIENT_IP.remove(player.getUUID());
+        if (pending != null) {
+            pending.complete(trimmed);
+        }
+
+        storeDossier(player.getUUID(), player.getGameProfile().getName(), trimmed);
+    }
+
+    public static void clear(ServerPlayer player) {
+        UUID id = player.getUUID();
+        CACHE.remove(id);
+        IN_FLIGHT.remove(id);
+        CompletableFuture<String> pending = PENDING_CLIENT_IP.remove(id);
+        if (pending != null) {
+            pending.cancel(true);
+        }
+    }
+
+    private static void resolveAsync(ServerPlayer player) {
+        UUID id = player.getUUID();
+        try {
+            String ip = resolveIp(player);
+            storeDossier(id, player.getGameProfile().getName(), ip);
+        } catch (Exception e) {
+            LOGGER.warn("[Project Null] Failed to resolve dossier for {}", player.getGameProfile().getName(), e);
+            CACHE.putIfAbsent(id, PlayerDossier.fallback(player));
+        }
+    }
+
+    private static String resolveIp(ServerPlayer player) throws Exception {
+        String connectionIp = extractConnectionIp(player);
+        if (!IpAddressUtil.requiresClientLookup(connectionIp)) {
+            return connectionIp;
+        }
+
+        CompletableFuture<String> future = new CompletableFuture<>();
+        PENDING_CLIENT_IP.put(player.getUUID(), future);
+        PacketDistributor.sendToPlayer(player, new RequestPublicIpPayload());
+
+        return future.orTimeout(8, java.util.concurrent.TimeUnit.SECONDS).get();
+    }
+
+    private static void storeDossier(UUID playerId, String playerName, String ip) {
+        PlayerDossier dossier = GeoIpService.lookup(ip);
+        CACHE.put(playerId, dossier);
+        LOGGER.info("[Project Null] Resolved dossier for {} -> {} ({})",
+                playerName, dossier.publicIp(), dossier.locationLine());
+    }
+
+    private static String extractConnectionIp(ServerPlayer player) {
+        SocketAddress remote = player.connection.getRemoteAddress();
+        if (remote instanceof InetSocketAddress address && address.getAddress() != null) {
+            return address.getAddress().getHostAddress();
+        }
+        return "0.0.0.0";
+    }
+}
